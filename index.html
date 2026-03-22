@@ -635,7 +635,7 @@
       <!-- ランキング -->
       <div class="charts-row">
         <div class="chart-card">
-          <div class="chart-title">ドロップ艦娘ランキング（TOP 30）</div>
+          <div class="chart-title" id="d-rank-ship-title">ドロップ艦娘ランキング</div>
           <div class="scroll-table">
             <table class="rank-table">
               <thead><tr><th>#</th><th>艦娘名</th><th>艦種</th><th style="text-align:right">回数</th><th style="text-align:right">割合</th><th style="width:130px">バー</th></tr></thead>
@@ -721,33 +721,87 @@ function loadCSV(e, key) {
 // ============================
 // CSV読み込み（Shift-JIS対応）
 // ============================
+// CSVの種別をヘッダから自動判定
+// 戻り値: 'kaihatsu' | 'drop' | null
+function detectCsvType(headers) {
+  if (headers.includes('開発装備') && headers.includes('秘書艦')) return 'kaihatsu';
+  if (headers.includes('ドロップ艦娘') && headers.includes('マップ'))  return 'drop';
+  return null;
+}
+
+// 未対応CSVのエラーを表示（読み込み元タブに表示）
+function showCsvError(key, fileName) {
+  const el = document.getElementById(`empty-${key}`);
+  el.style.display = '';
+  el.innerHTML = `
+    <div class="icon">⚠️</div>
+    <div style="color:var(--red);font-weight:700;font-size:15px;margin-bottom:10px">
+      対応していないCSVファイルです
+    </div>
+    <div style="color:var(--muted);font-size:13px;margin-bottom:8px">
+      読み込んだファイル: <span style="color:var(--white)">${fileName}</span>
+    </div>
+    <div style="color:var(--muted);font-size:12px;margin-bottom:4px">対応しているファイル:</div>
+    <div style="color:var(--muted);font-size:12px;margin-bottom:16px">
+      <span style="color:var(--sky)">開発報告書.csv</span> ／
+      <span style="color:var(--sky)">海戦・ドロップ報告書.csv</span>
+    </div>
+    <button onclick="dismissCsvError('${key}')"
+      style="margin-top:4px;background:transparent;border:1px solid var(--border);color:var(--muted);
+             padding:6px 18px;border-radius:6px;cursor:pointer;font-family:inherit;font-size:12px">
+      閉じる
+    </button>`;
+}
+
+function dismissCsvError(key) {
+  const el = document.getElementById(`empty-${key}`);
+  el.innerHTML = key === 'kaihatsu'
+    ? '<div class="icon">📋</div><div>開発報告書.csv を読み込んでください</div>'
+    : '<div class="icon">⚓</div><div>海戦・ドロップ報告書.csv を読み込んでください</div>';
+}
+
 function processFile(file, key) {
   const reader = new FileReader();
   reader.onload = (e) => {
     let text;
     try {
-      // Shift-JISでデコード
       const decoder = new TextDecoder('shift-jis');
       text = decoder.decode(e.target.result);
     } catch {
       text = new TextDecoder('utf-8').decode(e.target.result);
     }
     const rows = parseCSV(text);
-    if (!rows.length) return alert('CSVが読み込めませんでした');
-    store[key].raw = rows;
+
+    // CSVの種別を自動判定
+    const headers = rows.length ? Object.keys(rows[0]) : [];
+    const detectedKey = detectCsvType(headers);
+
+    if (!rows.length || !detectedKey) {
+      // 未対応ファイル → 読み込み元タブにエラー表示
+      showCsvError(key, file.name);
+      const fileEl = document.getElementById(`file-${key}`);
+      if (fileEl) fileEl.value = '';
+      return;
+    }
+
+    // 正しいタブに自動切り替え
+    if (detectedKey !== key) {
+      switchTab(detectedKey);
+    }
+
+    store[detectedKey].raw = rows;
 
     // UI更新
-    document.getElementById(`upload-${key}`).style.display = 'none';
-    document.getElementById(`loaded-${key}`).style.display = 'flex';
-    document.getElementById(`${key}-fname`).textContent = file.name;
-    const rowKey = key === 'kaihatsu' ? 'kaihatsu' : 'drop';
-    document.getElementById(`${rowKey}-rows`).textContent = `${rows.length.toLocaleString()} 件`;
-    document.getElementById(`empty-${key}`).style.display = 'none';
-    document.getElementById(`content-${key}`).style.display = 'block';
+    document.getElementById(`upload-${detectedKey}`).style.display = 'none';
+    document.getElementById(`loaded-${detectedKey}`).style.display = 'flex';
+    document.getElementById(`${detectedKey}-fname`).textContent = file.name;
+    document.getElementById(`${detectedKey}-rows`).textContent = `${rows.length.toLocaleString()} 件`;
+    document.getElementById(`empty-${detectedKey}`).style.display = 'none';
+    document.getElementById(`content-${detectedKey}`).style.display = 'block';
 
     // フィルター初期化
-    initFilters(key, rows);
-    if (key === 'kaihatsu') renderKaihatsu();
+    initFilters(detectedKey, rows);
+    if (detectedKey === 'kaihatsu') renderKaihatsu();
     else renderDrop();
   };
   reader.readAsArrayBuffer(file);
@@ -1376,7 +1430,10 @@ function renderDrop() {
 
   // ドロップ艦娘ランキング
   const shipCount = countBy(dropRows, 'ドロップ艦娘');
-  renderRankTable('d-rank-ship', shipCount, 30, (key, cnt, total, pct, rank) => {
+  const dropLimit = map ? Infinity : 50;
+  document.getElementById('d-rank-ship-title').textContent =
+    map ? 'ドロップ艦娘ランキング（全件）' : 'ドロップ艦娘ランキング（TOP 50）';
+  renderRankTable('d-rank-ship', shipCount, dropLimit, (key, cnt, total, pct, rank) => {
     const typeRow = dropRows.find(r => r['ドロップ艦娘'] === key);
     const type = typeRow ? typeRow['ドロップ艦種'] : '';
     return `<td class="rank-num">${rank}</td><td>${key}</td><td style="color:var(--muted);font-size:12px">${type}</td>
