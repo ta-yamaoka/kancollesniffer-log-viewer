@@ -1,0 +1,1451 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>艦これログアナライザー</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;700;900&family=Share+Tech+Mono&display=swap');
+
+  :root {
+    --navy: #0a1628;
+    --navy-mid: #112244;
+    --navy-light: #1a3366;
+    --steel: #2a4a7a;
+    --ocean: #1e6a9e;
+    --sky: #4db8e8;
+    --gold: #d4a843;
+    --gold-light: #f0c860;
+    --red: #c0392b;
+    --green: #27ae60;
+    --white: #e8f0f8;
+    --muted: #7a9abc;
+    --panel: rgba(17, 34, 68, 0.85);
+    --border: rgba(77, 184, 232, 0.25);
+    --glow: 0 0 20px rgba(77, 184, 232, 0.15);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Zen Kaku Gothic New', sans-serif;
+    background: var(--navy);
+    color: var(--white);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* 背景エフェクト */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 80% 60% at 20% 80%, rgba(30, 106, 158, 0.12) 0%, transparent 60%),
+      radial-gradient(ellipse 60% 40% at 80% 20%, rgba(212, 168, 67, 0.06) 0%, transparent 50%),
+      repeating-linear-gradient(0deg, transparent, transparent 59px, rgba(77,184,232,0.03) 60px),
+      repeating-linear-gradient(90deg, transparent, transparent 59px, rgba(77,184,232,0.03) 60px);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .container { position: relative; z-index: 1; max-width: 1400px; margin: 0 auto; padding: 0 24px 60px; }
+
+  /* ヘッダー */
+  header {
+    padding: 32px 0 24px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 32px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+  }
+  .header-emblem {
+    width: 52px; height: 52px;
+    border: 2px solid var(--gold);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 24px;
+    background: rgba(212,168,67,0.1);
+    box-shadow: 0 0 16px rgba(212,168,67,0.2);
+    flex-shrink: 0;
+  }
+  h1 {
+    font-size: 28px;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    color: var(--white);
+  }
+  h1 span { color: var(--sky); }
+  .header-sub {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.15em;
+    margin-top: 4px;
+  }
+
+  /* タブ */
+  .tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 28px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 0;
+  }
+  .tab {
+    padding: 10px 24px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-bottom: none;
+    color: var(--muted);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    border-radius: 6px 6px 0 0;
+    transition: all 0.2s;
+    position: relative;
+    top: 1px;
+  }
+  .tab:hover { color: var(--sky); }
+  .tab.active {
+    color: var(--sky);
+    background: var(--panel);
+    border-color: var(--border);
+    border-bottom-color: var(--navy);
+  }
+
+  /* アップロードエリア */
+  .upload-zone {
+    border: 2px dashed var(--border);
+    border-radius: 12px;
+    padding: 40px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s;
+    background: var(--panel);
+    margin-bottom: 28px;
+  }
+  .upload-zone:hover, .upload-zone.drag { border-color: var(--sky); background: rgba(77,184,232,0.05); }
+  .upload-zone input { display: none; }
+  .upload-icon { font-size: 40px; margin-bottom: 12px; }
+  .upload-title { font-size: 16px; font-weight: 700; color: var(--sky); margin-bottom: 6px; }
+  .upload-sub { font-size: 12px; color: var(--muted); }
+  .upload-hint {
+    margin-top: 12px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    color: var(--gold);
+    background: rgba(212,168,67,0.08);
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 4px;
+    border: 1px solid rgba(212,168,67,0.2);
+  }
+  .file-loaded {
+    display: flex; align-items: center; justify-content: space-between;
+    background: rgba(39,174,96,0.1);
+    border: 1px solid rgba(39,174,96,0.3);
+    border-radius: 8px;
+    padding: 12px 20px;
+    margin-bottom: 28px;
+  }
+  .file-loaded-info { font-size: 14px; }
+  .file-loaded-info strong { color: var(--green); }
+  .file-loaded-info span { color: var(--muted); font-size: 12px; margin-left: 8px; }
+  .btn-clear {
+    background: transparent; border: 1px solid var(--muted); color: var(--muted);
+    padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 12px;
+    font-family: inherit; transition: all 0.2s;
+  }
+  .btn-clear:hover { border-color: var(--red); color: var(--red); }
+
+  /* フィルターバー */
+  .filter-bar {
+    display: flex; flex-wrap: wrap; gap: 12px;
+    align-items: center;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin-bottom: 24px;
+  }
+  .filter-label { font-size: 11px; color: var(--muted); font-weight: 700; letter-spacing: 0.1em; white-space: nowrap; }
+  .filter-bar select, .filter-bar input[type=text] {
+    background: rgba(10,22,40,0.8);
+    border: 1px solid var(--border);
+    color: var(--white);
+    padding: 7px 12px;
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 13px;
+    cursor: pointer;
+    min-width: 120px;
+    transition: border-color 0.2s;
+  }
+  .filter-bar select:focus, .filter-bar input:focus { outline: none; border-color: var(--sky); }
+  .filter-sep { width: 1px; height: 24px; background: var(--border); margin: 0 4px; }
+  .btn-reset {
+    background: transparent; border: 1px solid var(--border); color: var(--muted);
+    padding: 7px 14px; border-radius: 6px; cursor: pointer; font-size: 12px; font-family: inherit;
+    transition: all 0.2s; white-space: nowrap;
+  }
+  .btn-reset:hover { border-color: var(--sky); color: var(--sky); }
+
+  /* グリッドレイアウト */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .stat-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 20px;
+    box-shadow: var(--glow);
+    position: relative;
+    overflow: hidden;
+  }
+  .stat-card::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, var(--sky), transparent);
+  }
+  .stat-label { font-size: 11px; color: var(--muted); letter-spacing: 0.1em; margin-bottom: 6px; }
+  .stat-value { font-size: 28px; font-weight: 900; color: var(--white); line-height: 1; }
+  .stat-value.gold { color: var(--gold); }
+  .stat-value.sky { color: var(--sky); }
+  .stat-value.green { color: var(--green); }
+  .stat-sub { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+  /* チャートエリア */
+  .charts-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin-bottom: 20px;
+  }
+  @media (max-width: 900px) { .charts-row { grid-template-columns: 1fr; } }
+
+  .chart-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 24px;
+    box-shadow: var(--glow);
+  }
+  .chart-card.wide { grid-column: 1 / -1; }
+  .chart-title {
+    font-size: 13px; font-weight: 700; color: var(--sky);
+    letter-spacing: 0.08em; margin-bottom: 16px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .chart-title::before {
+    content: '';
+    width: 3px; height: 14px;
+    background: var(--sky);
+    border-radius: 2px;
+    display: inline-block;
+  }
+  .chart-wrap { position: relative; height: 260px; }
+  .chart-wrap.tall { height: 340px; }
+
+  /* ランキングテーブル */
+  .rank-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .rank-table th {
+    text-align: left; padding: 8px 12px;
+    color: var(--muted); font-weight: 700; font-size: 11px; letter-spacing: 0.1em;
+    border-bottom: 1px solid var(--border);
+  }
+  .rank-table td { padding: 7px 12px; border-bottom: 1px solid rgba(77,184,232,0.08); }
+  .rank-table tr:hover td { background: rgba(77,184,232,0.05); }
+  .rank-num { font-family: 'Share Tech Mono', monospace; color: var(--muted); font-size: 12px; }
+  .rank-bar-wrap { width: 120px; }
+  .rank-bar {
+    height: 4px; background: rgba(77,184,232,0.15);
+    border-radius: 2px; overflow: hidden;
+  }
+  .rank-bar-fill { height: 100%; background: var(--sky); border-radius: 2px; transition: width 0.6s; }
+  .rank-count { font-family: 'Share Tech Mono', monospace; color: var(--gold); font-size: 12px; text-align: right; }
+  .rank-pct { color: var(--muted); font-size: 11px; text-align: right; }
+  .scroll-table { max-height: 340px; overflow-y: auto; }
+  .scroll-table::-webkit-scrollbar { width: 4px; }
+  .scroll-table::-webkit-scrollbar-track { background: transparent; }
+  .scroll-table::-webkit-scrollbar-thumb { background: var(--steel); border-radius: 2px; }
+
+  /* 空状態 */
+  .empty-state {
+    text-align: center; padding: 60px 20px;
+    color: var(--muted); font-size: 14px;
+  }
+  .empty-state .icon { font-size: 48px; margin-bottom: 12px; opacity: 0.4; }
+
+  /* ページ内コンテンツ */
+  .page { display: none; }
+  .page.active { display: block; }
+
+  /* ドロップ特定検索 */
+  .drop-search-result {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-bottom: 20px;
+  }
+
+  /* 秘書艦チェックボックス */
+  .sec-checkbox-label {
+    display: flex; align-items: center; gap: 6px;
+    padding: 4px 10px;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--muted);
+    transition: all 0.15s;
+    user-select: none;
+    white-space: nowrap;
+  }
+  .sec-checkbox-label:hover { border-color: var(--sky); color: var(--sky); }
+  .sec-checkbox-label input { display: none; }
+  .sec-checkbox-label.checked {
+    background: rgba(77,184,232,0.15);
+    border-color: var(--sky);
+    color: var(--sky);
+    font-weight: 700;
+  }
+
+  /* エンコーディング警告 */
+  .warning {
+    background: rgba(192,57,43,0.1);
+    border: 1px solid rgba(192,57,43,0.3);
+    border-radius: 8px;
+    padding: 10px 16px;
+    font-size: 12px;
+    color: #e74c3c;
+    margin-bottom: 16px;
+  }
+
+  /* レスポンシブ調整 */
+  @media (max-width: 600px) {
+    h1 { font-size: 20px; }
+    .stats-grid { grid-template-columns: 1fr 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <div class="header-emblem">⚓</div>
+    <div>
+      <h1>艦これ <span>ログアナライザー</span></h1>
+      <div class="header-sub">KANCOLLESNIFFER LOG ANALYZER — v1.0</div>
+    </div>
+  </header>
+
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('kaihatsu')">⚙️ 開発報告書</button>
+    <button class="tab" onclick="switchTab('drop')">⚓ 海戦・ドロップ報告書</button>
+  </div>
+
+  <!-- ====== 開発報告書タブ ====== -->
+  <div id="tab-kaihatsu" class="page active">
+    <div id="upload-kaihatsu" class="upload-zone" onclick="document.getElementById('file-kaihatsu').click()"
+         ondragover="handleDrag(event,'kaihatsu')" ondragleave="handleDragLeave(event,'kaihatsu')" ondrop="handleDrop(event,'kaihatsu')">
+      <input type="file" id="file-kaihatsu" accept=".csv" onchange="loadCSV(event,'kaihatsu')">
+      <div class="upload-icon">📂</div>
+      <div class="upload-title">開発報告書.csv をドロップ or クリック</div>
+      <div class="upload-sub">KancolleSniffer が出力した CSV ファイルを読み込みます</div>
+      <div class="upload-hint">文字コード: Shift-JIS (CP932) に対応</div>
+    </div>
+
+    <div id="loaded-kaihatsu" class="file-loaded" style="display:none">
+      <div class="file-loaded-info">
+        <strong id="kaihatsu-fname">—</strong>
+        <span id="kaihatsu-rows">—</span>
+      </div>
+      <button class="btn-clear" onclick="clearData('kaihatsu')">× クリア</button>
+    </div>
+
+    <div id="content-kaihatsu" style="display:none">
+      <!-- フィルター -->
+      <div class="filter-bar">
+        <span class="filter-label">期間</span>
+        <select id="k-period" onchange="renderKaihatsu()">
+          <option value="all">すべて</option>
+          <option value="30">直近30日</option>
+          <option value="90">直近90日</option>
+          <option value="180">直近180日</option>
+          <option value="365">直近1年</option>
+        </select>
+        <div class="filter-sep"></div>
+        <span class="filter-label">秘書艦</span>
+        <select id="k-secretary" onchange="renderKaihatsu()">
+          <option value="">すべて</option>
+        </select>
+        <div class="filter-sep"></div>
+        <span class="filter-label">種別</span>
+        <select id="k-type" onchange="renderKaihatsu()">
+          <option value="">すべて</option>
+        </select>
+        <div class="filter-sep"></div>
+        <span class="filter-label">装備名</span>
+        <input type="text" id="k-item" placeholder="例：46cm三連装砲" oninput="renderKaihatsu()" style="min-width:180px">
+        <button class="btn-reset" onclick="resetFilters('kaihatsu')">リセット</button>
+      </div>
+
+      <!-- 統計カード -->
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-label">総開発回数</div>
+          <div class="stat-value sky" id="k-total">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">成功回数</div>
+          <div class="stat-value green" id="k-success">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">失敗回数</div>
+          <div class="stat-value" id="k-fail" style="color:var(--red)">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">成功率</div>
+          <div class="stat-value gold" id="k-rate">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">開発した種別数</div>
+          <div class="stat-value" id="k-types">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">ユニーク装備数</div>
+          <div class="stat-value" id="k-unique">—</div>
+        </div>
+      </div>
+
+      <!-- チャート -->
+      <div class="charts-row">
+        <div class="chart-card">
+          <div class="chart-title">種別ごとの開発数</div>
+          <div class="chart-wrap"><canvas id="k-chart-type"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-title">日別開発数 (直近30日)</div>
+          <div class="chart-wrap"><canvas id="k-chart-daily"></canvas></div>
+        </div>
+      </div>
+
+      <!-- ランキング -->
+      <div class="charts-row">
+        <div class="chart-card">
+          <div class="chart-title">装備別開発数ランキング（TOP 30）</div>
+          <div class="scroll-table">
+            <table class="rank-table">
+              <thead><tr><th>#</th><th>装備名</th><th>種別</th><th style="text-align:right">回数</th><th style="text-align:right">割合</th><th style="width:130px">バー</th></tr></thead>
+              <tbody id="k-rank-items"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-title">秘書艦別開発数ランキング</div>
+          <div class="scroll-table">
+            <table class="rank-table">
+              <thead><tr><th>#</th><th>秘書艦</th><th style="text-align:right">回数</th><th style="text-align:right">割合</th><th style="width:130px">バー</th></tr></thead>
+              <tbody id="k-rank-sec"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- レシピ分析 -->
+      <div class="chart-card" style="margin-bottom:20px">
+        <div class="chart-title">レシピ別開発数ランキング（TOP 20）</div>
+        <div class="scroll-table">
+          <table class="rank-table">
+            <thead><tr><th>#</th><th>燃料</th><th>弾薬</th><th>鋼材</th><th>ボーキ</th><th style="text-align:right">回数</th><th style="text-align:right">成功</th><th style="text-align:right">成功率</th><th style="width:80px"></th></tr></thead>
+            <tbody id="k-rank-recipe"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- レシピ確率分布 -->
+      <div class="chart-card" style="margin-bottom:20px" id="k-recipe-dist-card">
+        <div class="chart-title">📊 レシピ別装備開発確率分布</div>
+
+        <!-- レシピ選択エリア -->
+        <div style="display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end; margin-bottom:20px; padding:16px; background:rgba(10,22,40,0.5); border-radius:8px; border:1px solid var(--border)">
+          <div>
+            <div style="font-size:11px; color:var(--muted); margin-bottom:6px; letter-spacing:0.1em; font-weight:700">ログから選択</div>
+            <select id="k-recipe-select" onchange="onRecipeSelectChange()" style="background:rgba(10,22,40,0.8);border:1px solid var(--border);color:var(--white);padding:8px 12px;border-radius:6px;font-family:inherit;font-size:13px;min-width:260px">
+              <option value="">— レシピを選んでください —</option>
+            </select>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px; color:var(--muted); font-size:12px; padding-bottom:8px">または</div>
+          <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end">
+            <div>
+              <div style="font-size:11px; color:var(--green); margin-bottom:6px; letter-spacing:0.08em; font-weight:700">燃料</div>
+              <input type="number" id="k-r-fuel" min="0" max="9999" placeholder="100" style="width:80px; background:rgba(10,22,40,0.8);border:1px solid rgba(39,174,96,0.4);color:var(--white);padding:8px 10px;border-radius:6px;font-family:inherit;font-size:13px;">
+            </div>
+            <div>
+              <div style="font-size:11px; color:var(--gold); margin-bottom:6px; letter-spacing:0.08em; font-weight:700">弾薬</div>
+              <input type="number" id="k-r-ammo" min="0" max="9999" placeholder="251" style="width:80px; background:rgba(10,22,40,0.8);border:1px solid rgba(212,168,67,0.4);color:var(--white);padding:8px 10px;border-radius:6px;font-family:inherit;font-size:13px;">
+            </div>
+            <div>
+              <div style="font-size:11px; color:var(--muted); margin-bottom:6px; letter-spacing:0.08em; font-weight:700">鋼材</div>
+              <input type="number" id="k-r-steel" min="0" max="9999" placeholder="250" style="width:80px; background:rgba(10,22,40,0.8);border:1px solid var(--border);color:var(--white);padding:8px 10px;border-radius:6px;font-family:inherit;font-size:13px;">
+            </div>
+            <div>
+              <div style="font-size:11px; color:var(--sky); margin-bottom:6px; letter-spacing:0.08em; font-weight:700">ボーキ</div>
+              <input type="number" id="k-r-bauxite" min="0" max="9999" placeholder="10" style="width:80px; background:rgba(10,22,40,0.8);border:1px solid rgba(77,184,232,0.4);color:var(--white);padding:8px 10px;border-radius:6px;font-family:inherit;font-size:13px;">
+            </div>
+            <button onclick="searchRecipeDist()" style="background:var(--ocean);border:none;color:white;padding:8px 20px;border-radius:6px;cursor:pointer;font-family:inherit;font-size:14px;font-weight:700;white-space:nowrap;margin-bottom:1px">🔍 表示</button>
+          </div>
+        </div>
+
+        <!-- 秘書艦フィルター -->
+        <div style="margin-bottom:20px; padding:14px 16px; background:rgba(10,22,40,0.5); border-radius:8px; border:1px solid var(--border)">
+          <div style="display:flex; align-items:center; gap:12px; margin-bottom:10px; flex-wrap:wrap">
+            <div style="font-size:11px; color:var(--muted); letter-spacing:0.1em; font-weight:700; white-space:nowrap">⚓ 秘書艦フィルター</div>
+            <button onclick="toggleAllSecretaries(true)"  style="background:transparent;border:1px solid var(--border);color:var(--muted);padding:3px 10px;border-radius:4px;cursor:pointer;font-family:inherit;font-size:11px;transition:all 0.2s" onmouseover="this.style.borderColor='var(--sky)';this.style.color='var(--sky)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--muted)'">すべて選択</button>
+            <button onclick="toggleAllSecretaries(false)" style="background:transparent;border:1px solid var(--border);color:var(--muted);padding:3px 10px;border-radius:4px;cursor:pointer;font-family:inherit;font-size:11px;transition:all 0.2s" onmouseover="this.style.borderColor='var(--sky)';this.style.color='var(--sky)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--muted)'">すべて解除</button>
+            <span id="k-sec-filter-note" style="font-size:11px; color:var(--muted)">チェックなし = すべての秘書艦が対象</span>
+          </div>
+          <div id="k-secretary-checkboxes" style="display:flex; flex-wrap:wrap; gap:6px 12px; max-height:130px; overflow-y:auto; padding-right:4px">
+            <div style="color:var(--muted);font-size:12px">CSV 読み込み後に表示されます</div>
+          </div>
+        </div>
+
+        <!-- 結果エリア -->
+        <div id="k-recipe-dist-result">
+          <div style="color:var(--muted);font-size:13px;text-align:center;padding:30px 0">
+            レシピを選択または入力して「表示」を押してください
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="empty-kaihatsu" class="empty-state">
+      <div class="icon">📋</div>
+      <div>開発報告書.csv を読み込んでください</div>
+    </div>
+  </div>
+
+  <!-- ====== 海戦・ドロップタブ ====== -->
+  <div id="tab-drop" class="page">
+    <div id="upload-drop" class="upload-zone" onclick="document.getElementById('file-drop').click()"
+         ondragover="handleDrag(event,'drop')" ondragleave="handleDragLeave(event,'drop')" ondrop="handleDrop(event,'drop')">
+      <input type="file" id="file-drop" accept=".csv" onchange="loadCSV(event,'drop')">
+      <div class="upload-icon">📂</div>
+      <div class="upload-title">海戦・ドロップ報告書.csv をドロップ or クリック</div>
+      <div class="upload-sub">KancolleSniffer が出力した CSV ファイルを読み込みます（大容量対応）</div>
+      <div class="upload-hint">文字コード: Shift-JIS (CP932) に対応</div>
+    </div>
+
+    <div id="loaded-drop" class="file-loaded" style="display:none">
+      <div class="file-loaded-info">
+        <strong id="drop-fname">—</strong>
+        <span id="drop-rows">—</span>
+      </div>
+      <button class="btn-clear" onclick="clearData('drop')">× クリア</button>
+    </div>
+
+    <div id="content-drop" style="display:none">
+      <!-- フィルター -->
+      <div class="filter-bar">
+        <span class="filter-label">期間</span>
+        <select id="d-period" onchange="renderDrop()">
+          <option value="all">すべて</option>
+          <option value="30">直近30日</option>
+          <option value="90">直近90日</option>
+          <option value="180">直近180日</option>
+          <option value="365">直近1年</option>
+        </select>
+        <div class="filter-sep"></div>
+        <span class="filter-label">マップ</span>
+        <select id="d-map" onchange="renderDrop()">
+          <option value="">すべて</option>
+        </select>
+        <div class="filter-sep"></div>
+        <span class="filter-label">ランク</span>
+        <select id="d-rank" onchange="renderDrop()">
+          <option value="">すべて</option>
+          <option value="S">S</option>
+          <option value="A">A</option>
+          <option value="B">B</option>
+          <option value="C">C</option>
+          <option value="D">D</option>
+        </select>
+        <div class="filter-sep"></div>
+        <span class="filter-label">ドロップ艦名</span>
+        <input type="text" id="d-ship" placeholder="例：島風" oninput="renderDrop()" style="min-width:140px">
+        <button class="btn-reset" onclick="resetFilters('drop')">リセット</button>
+      </div>
+
+      <!-- 統計カード -->
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-label">総出撃数</div>
+          <div class="stat-value sky" id="d-total">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">ドロップ総数</div>
+          <div class="stat-value green" id="d-drops">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">ドロップ率</div>
+          <div class="stat-value gold" id="d-drop-rate">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">S勝利数</div>
+          <div class="stat-value" id="d-s-rank">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">S勝利率</div>
+          <div class="stat-value gold" id="d-s-rate">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">ユニーク艦娘数</div>
+          <div class="stat-value" id="d-unique">—</div>
+        </div>
+      </div>
+
+      <!-- チャート -->
+      <div class="charts-row">
+        <div class="chart-card">
+          <div class="chart-title">マップ別出撃数</div>
+          <div class="chart-wrap"><canvas id="d-chart-map"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-title">勝利ランク分布</div>
+          <div class="chart-wrap"><canvas id="d-chart-rank"></canvas></div>
+        </div>
+      </div>
+
+      <!-- ランキング -->
+      <div class="charts-row">
+        <div class="chart-card">
+          <div class="chart-title">ドロップ艦娘ランキング（TOP 30）</div>
+          <div class="scroll-table">
+            <table class="rank-table">
+              <thead><tr><th>#</th><th>艦娘名</th><th>艦種</th><th style="text-align:right">回数</th><th style="text-align:right">割合</th><th style="width:130px">バー</th></tr></thead>
+              <tbody id="d-rank-ship"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-title">マップ別ドロップランキング</div>
+          <div class="scroll-table">
+            <table class="rank-table">
+              <thead><tr><th>#</th><th>マップ</th><th style="text-align:right">出撃</th><th style="text-align:right">ドロップ</th><th style="text-align:right">ドロップ率</th></tr></thead>
+              <tbody id="d-rank-map"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- 特定艦娘ドロップ検索 -->
+      <div class="drop-search-result">
+        <div class="chart-title">特定艦娘ドロップマップ分析</div>
+        <div style="display:flex; gap:12px; align-items:center; margin-bottom:16px; flex-wrap:wrap">
+          <input type="text" id="d-search-ship" placeholder="艦娘名を入力（例：島風）" style="background:rgba(10,22,40,0.8);border:1px solid var(--border);color:var(--white);padding:8px 14px;border-radius:6px;font-family:inherit;font-size:14px;min-width:220px">
+          <button onclick="searchShipDrop()" style="background:var(--ocean);border:none;color:white;padding:8px 20px;border-radius:6px;cursor:pointer;font-family:inherit;font-size:14px;font-weight:700">🔍 検索</button>
+        </div>
+        <div id="d-search-result">
+          <div style="color:var(--muted); font-size:13px">艦娘名を入力すると、マップ別のドロップ回数を表示します</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="empty-drop" class="empty-state">
+      <div class="icon">⚓</div>
+      <div>海戦・ドロップ報告書.csv を読み込んでください</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================
+// データストア
+// ============================
+const store = {
+  kaihatsu: { raw: [], filtered: [] },
+  drop: { raw: [], filtered: [] },
+};
+
+// チャートインスタンス管理
+const charts = {};
+
+// ============================
+// タブ切替
+// ============================
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach((t,i) => t.classList.remove('active'));
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  const tabIdx = name === 'kaihatsu' ? 0 : 1;
+  document.querySelectorAll('.tab')[tabIdx].classList.add('active');
+  document.getElementById(`tab-${name}`).classList.add('active');
+}
+
+// ============================
+// ドラッグ&ドロップ
+// ============================
+function handleDrag(e, key) {
+  e.preventDefault();
+  document.getElementById(`upload-${key}`).classList.add('drag');
+}
+function handleDragLeave(e, key) {
+  document.getElementById(`upload-${key}`).classList.remove('drag');
+}
+function handleDrop(e, key) {
+  e.preventDefault();
+  document.getElementById(`upload-${key}`).classList.remove('drag');
+  const file = e.dataTransfer.files[0];
+  if (file) processFile(file, key);
+}
+function loadCSV(e, key) {
+  const file = e.target.files[0];
+  if (file) processFile(file, key);
+}
+
+// ============================
+// CSV読み込み（Shift-JIS対応）
+// ============================
+function processFile(file, key) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    let text;
+    try {
+      // Shift-JISでデコード
+      const decoder = new TextDecoder('shift-jis');
+      text = decoder.decode(e.target.result);
+    } catch {
+      text = new TextDecoder('utf-8').decode(e.target.result);
+    }
+    const rows = parseCSV(text);
+    if (!rows.length) return alert('CSVが読み込めませんでした');
+    store[key].raw = rows;
+
+    // UI更新
+    document.getElementById(`upload-${key}`).style.display = 'none';
+    document.getElementById(`loaded-${key}`).style.display = 'flex';
+    document.getElementById(`${key}-fname`).textContent = file.name;
+    const rowKey = key === 'kaihatsu' ? 'kaihatsu' : 'drop';
+    document.getElementById(`${rowKey}-rows`).textContent = `${rows.length.toLocaleString()} 件`;
+    document.getElementById(`empty-${key}`).style.display = 'none';
+    document.getElementById(`content-${key}`).style.display = 'block';
+
+    // フィルター初期化
+    initFilters(key, rows);
+    if (key === 'kaihatsu') renderKaihatsu();
+    else renderDrop();
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function clearData(key) {
+  store[key].raw = [];
+  document.getElementById(`upload-${key}`).style.display = '';
+  document.getElementById(`loaded-${key}`).style.display = 'none';
+  document.getElementById(`content-${key}`).style.display = 'none';
+  document.getElementById(`empty-${key}`).style.display = '';
+  const fileEl = document.getElementById(`file-${key}`);
+  if (fileEl) fileEl.value = '';
+}
+
+// ============================
+// CSV パーサー
+// ============================
+function parseCSV(text) {
+  const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+  if (!lines.length) return [];
+  const headers = lines[0].split(',');
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    if (!lines[i].trim()) continue;
+    const vals = splitCSVLine(lines[i]);
+    const obj = {};
+    headers.forEach((h, j) => { obj[h.trim()] = (vals[j] || '').trim(); });
+    rows.push(obj);
+  }
+  return rows;
+}
+
+function splitCSVLine(line) {
+  const result = [];
+  let cur = '', inQ = false;
+  for (let i = 0; i < line.length; i++) {
+    if (line[i] === '"') { inQ = !inQ; }
+    else if (line[i] === ',' && !inQ) { result.push(cur); cur = ''; }
+    else { cur += line[i]; }
+  }
+  result.push(cur);
+  return result;
+}
+
+// ============================
+// フィルター初期化
+// ============================
+function initFilters(key, rows) {
+  if (key === 'kaihatsu') {
+    const secs = [...new Set(rows.map(r => normalizeSecretary(r['秘書艦'])).filter(Boolean))].sort();
+    const types = [...new Set(rows.map(r => r['種別']).filter(Boolean))].sort();
+    fillSelect('k-secretary', secs);
+    fillSelect('k-type', types);
+    initSecretaryCheckboxes(rows);
+  } else {
+    const maps = [...new Set(rows.map(r => r['マップ']).filter(Boolean))].sort((a,b) => {
+      const [a1,a2] = a.split('-').map(Number);
+      const [b1,b2] = b.split('-').map(Number);
+      return a1 !== b1 ? a1-b1 : a2-b2;
+    });
+    fillSelect('d-map', maps);
+  }
+}
+
+function fillSelect(id, options) {
+  const sel = document.getElementById(id);
+  while (sel.options.length > 1) sel.remove(1);
+  options.forEach(o => {
+    const opt = document.createElement('option');
+    opt.value = o; opt.textContent = o;
+    sel.appendChild(opt);
+  });
+}
+
+function normalizeSecretary(s) {
+  if (!s) return '';
+  return s.replace(/\(.*?\)/g, '').trim();
+}
+
+// ============================
+// 期間フィルター
+// ============================
+function filterByPeriod(rows, period, dateKey = '日付') {
+  if (!period || period === 'all') return rows;
+  const days = parseInt(period);
+  const cutoff = new Date(Date.now() - days * 86400000);
+  return rows.filter(r => {
+    const d = new Date(r[dateKey]);
+    return d >= cutoff;
+  });
+}
+
+// ============================
+// フィルターリセット
+// ============================
+function resetFilters(key) {
+  if (key === 'kaihatsu') {
+    document.getElementById('k-period').value = 'all';
+    document.getElementById('k-secretary').value = '';
+    document.getElementById('k-type').value = '';
+    document.getElementById('k-item').value = '';
+    renderKaihatsu();
+  } else {
+    document.getElementById('d-period').value = 'all';
+    document.getElementById('d-map').value = '';
+    document.getElementById('d-rank').value = '';
+    document.getElementById('d-ship').value = '';
+    renderDrop();
+  }
+}
+
+// ============================
+// 開発報告書 レンダリング
+// ============================
+function renderKaihatsu() {
+  let rows = store.kaihatsu.raw;
+  if (!rows.length) return;
+
+  const period = document.getElementById('k-period').value;
+  const sec = document.getElementById('k-secretary').value;
+  const type = document.getElementById('k-type').value;
+  const item = document.getElementById('k-item').value.trim();
+
+  rows = filterByPeriod(rows, period);
+  if (sec) rows = rows.filter(r => normalizeSecretary(r['秘書艦']) === sec);
+  if (type) rows = rows.filter(r => r['種別'] === type);
+  if (item) rows = rows.filter(r => r['開発装備'].includes(item));
+
+  const total = rows.length;
+  const fail = rows.filter(r => r['開発装備'] === '失敗').length;
+  const success = total - fail;
+  const rate = total ? ((success / total) * 100).toFixed(1) : 0;
+  const successRows = rows.filter(r => r['開発装備'] !== '失敗');
+  const typeSet = new Set(successRows.map(r => r['種別']).filter(Boolean));
+  const itemSet = new Set(successRows.map(r => r['開発装備']).filter(Boolean));
+
+  document.getElementById('k-total').textContent = total.toLocaleString();
+  document.getElementById('k-success').textContent = success.toLocaleString();
+  document.getElementById('k-fail').textContent = fail.toLocaleString();
+  document.getElementById('k-rate').textContent = `${rate}%`;
+  document.getElementById('k-types').textContent = typeSet.size;
+  document.getElementById('k-unique').textContent = itemSet.size;
+
+  // 種別チャート
+  const typeCount = countBy(rows.filter(r => r['種別']), '種別');
+  renderDonut('k-chart-type', Object.keys(typeCount), Object.values(typeCount));
+
+  // 日別チャート（直近30日）
+  const daily30 = filterByPeriod(rows, '30');
+  const dailyCount = {};
+  daily30.forEach(r => {
+    const d = r['日付'].slice(0, 10);
+    dailyCount[d] = (dailyCount[d] || 0) + 1;
+  });
+  const sortedDays = Object.keys(dailyCount).sort();
+  renderLine('k-chart-daily', sortedDays, Object.values(sortedDays.map(d => dailyCount[d])), '開発回数');
+
+  // 装備ランキング
+  const itemCount = countBy(successRows, '開発装備');
+  renderRankTable('k-rank-items', itemCount, 30, (key, cnt, total, pct, rank) => {
+    const typeRow = rows.find(r => r['開発装備'] === key);
+    const tp = typeRow ? typeRow['種別'] : '';
+    return `<td class="rank-num">${rank}</td><td>${key}</td><td style="color:var(--muted);font-size:12px">${tp}</td>
+            <td class="rank-count">${cnt}</td><td class="rank-pct">${pct}%</td>
+            <td class="rank-bar-wrap"><div class="rank-bar"><div class="rank-bar-fill" style="width:${(cnt/total*100).toFixed(1)}%"></div></div></td>`;
+  }, success);
+
+  // 秘書艦ランキング
+  const secCount = countBy(rows, r => normalizeSecretary(r['秘書艦']));
+  renderRankTable('k-rank-sec', secCount, 20, (key, cnt, total, pct, rank) =>
+    `<td class="rank-num">${rank}</td><td>${key}</td>
+     <td class="rank-count">${cnt}</td><td class="rank-pct">${pct}%</td>
+     <td class="rank-bar-wrap"><div class="rank-bar"><div class="rank-bar-fill" style="width:${(cnt/total*100).toFixed(1)}%"></div></div></td>`,
+    total
+  );
+
+  // レシピランキング
+  const recipeCount = {};
+  rows.forEach(r => {
+    const key = `${r['燃料']},${r['弾薬']},${r['鋼材']},${r['ボーキ']}`;
+    if (!recipeCount[key]) recipeCount[key] = { total: 0, success: 0 };
+    recipeCount[key].total++;
+    if (r['開発装備'] !== '失敗') recipeCount[key].success++;
+  });
+  const sortedRecipe = Object.entries(recipeCount).sort((a,b) => b[1].total - a[1].total).slice(0, 20);
+  const tbody = document.getElementById('k-rank-recipe');
+  tbody.innerHTML = sortedRecipe.map(([key, val], i) => {
+    const [f,a,s,b] = key.split(',');
+    const rate = val.total ? (val.success/val.total*100).toFixed(1) : 0;
+    return `<tr>
+      <td class="rank-num">${i+1}</td>
+      <td style="color:var(--green)">${f}</td>
+      <td style="color:var(--gold)">${a}</td>
+      <td style="color:var(--muted)">${s}</td>
+      <td style="color:var(--sky)">${b}</td>
+      <td class="rank-count">${val.total}</td>
+      <td class="rank-count">${val.success}</td>
+      <td style="text-align:right; color:${rate>=50?'var(--green)':'var(--red)'}">${rate}%</td>
+      <td><button onclick="jumpToRecipeDist('${key}')" style="background:rgba(77,184,232,0.15);border:1px solid var(--border);color:var(--sky);padding:3px 10px;border-radius:4px;cursor:pointer;font-family:inherit;font-size:11px;white-space:nowrap">分布↓</button></td>
+    </tr>`;
+  }).join('');
+
+  // レシピセレクトを全レシピで更新（使用回数降順）
+  updateRecipeSelect(recipeCount);
+}
+
+// ============================
+// 秘書艦チェックボックス初期化
+// ============================
+function initSecretaryCheckboxes(rows) {
+  const secs = [...new Set(rows.map(r => normalizeSecretary(r['秘書艦'])).filter(Boolean))].sort();
+  const container = document.getElementById('k-secretary-checkboxes');
+  container.innerHTML = secs.map(sec => `
+    <label class="sec-checkbox-label" id="sec-lbl-${CSS.escape(sec)}" onclick="onSecCheckboxClick(this)">
+      <input type="checkbox" value="${sec}" class="sec-cb">
+      ${sec}
+    </label>
+  `).join('');
+}
+
+function onSecCheckboxClick(label) {
+  // クリック後にチェック状態が確定するのを待つ
+  setTimeout(() => {
+    const cb = label.querySelector('input');
+    label.classList.toggle('checked', cb.checked);
+    updateSecFilterNote();
+  }, 0);
+}
+
+function toggleAllSecretaries(checked) {
+  document.querySelectorAll('.sec-cb').forEach(cb => {
+    cb.checked = checked;
+    const lbl = cb.closest('.sec-checkbox-label');
+    if (lbl) lbl.classList.toggle('checked', checked);
+  });
+  updateSecFilterNote();
+}
+
+function updateSecFilterNote() {
+  const checked = getCheckedSecretaries();
+  const note = document.getElementById('k-sec-filter-note');
+  if (!note) return;
+  note.textContent = checked.length === 0
+    ? 'チェックなし = すべての秘書艦が対象'
+    : `${checked.length} 艦選択中`;
+  note.style.color = checked.length > 0 ? 'var(--sky)' : 'var(--muted)';
+}
+
+function getCheckedSecretaries() {
+  return [...document.querySelectorAll('.sec-cb:checked')].map(cb => cb.value);
+}
+
+// ============================
+// レシピセレクト更新
+// ============================
+function updateRecipeSelect(recipeCount) {
+  const sel = document.getElementById('k-recipe-select');
+  const prev = sel.value;
+  while (sel.options.length > 1) sel.remove(1);
+  Object.entries(recipeCount)
+    .sort((a,b) => b[1].total - a[1].total)
+    .forEach(([key, val]) => {
+      const [f,a,s,b] = key.split(',');
+      const opt = document.createElement('option');
+      opt.value = key;
+      opt.textContent = `燃${f} 弾${a} 鋼${s} ボ${b}　（${val.total}回 / 成功率${val.total?(val.success/val.total*100).toFixed(1):0}%）`;
+      sel.appendChild(opt);
+    });
+  if (prev) sel.value = prev;
+}
+
+// ============================
+// レシピセレクト変更ハンドラ
+// ============================
+function onRecipeSelectChange() {
+  const val = document.getElementById('k-recipe-select').value;
+  if (!val) return;
+  const [f,a,s,b] = val.split(',');
+  document.getElementById('k-r-fuel').value = f;
+  document.getElementById('k-r-ammo').value = a;
+  document.getElementById('k-r-steel').value = s;
+  document.getElementById('k-r-bauxite').value = b;
+  searchRecipeDist();
+}
+
+// ============================
+// ランキング表の「分布↓」ボタンから飛ぶ
+// ============================
+function jumpToRecipeDist(key) {
+  const [f,a,s,b] = key.split(',');
+  document.getElementById('k-recipe-select').value = key;
+  document.getElementById('k-r-fuel').value = f;
+  document.getElementById('k-r-ammo').value = a;
+  document.getElementById('k-r-steel').value = s;
+  document.getElementById('k-r-bauxite').value = b;
+  searchRecipeDist();
+  document.getElementById('k-recipe-dist-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// ============================
+// レシピ確率分布 検索＆表示
+// ============================
+function searchRecipeDist() {
+  const f = document.getElementById('k-r-fuel').value.trim();
+  const a = document.getElementById('k-r-ammo').value.trim();
+  const s = document.getElementById('k-r-steel').value.trim();
+  const b = document.getElementById('k-r-bauxite').value.trim();
+  const el = document.getElementById('k-recipe-dist-result');
+
+  if (!f || !a || !s || !b) {
+    el.innerHTML = '<div style="color:var(--red);font-size:13px;text-align:center;padding:20px">燃料・弾薬・鋼材・ボーキをすべて入力してください</div>';
+    return;
+  }
+
+  const rows = store.kaihatsu.raw.filter(r =>
+    r['燃料'] === f && r['弾薬'] === a && r['鋼材'] === s && r['ボーキ'] === b
+  );
+
+  if (!rows.length) {
+    el.innerHTML = `<div style="color:var(--red);font-size:13px;text-align:center;padding:20px">燃料${f} / 弾薬${a} / 鋼材${s} / ボーキ${b} のレコードが見つかりません</div>`;
+    return;
+  }
+
+  // 秘書艦フィルター
+  const checkedSecs = getCheckedSecretaries();
+  const filteredRows = checkedSecs.length > 0
+    ? rows.filter(r => checkedSecs.includes(normalizeSecretary(r['秘書艦'])))
+    : rows;
+
+  if (!filteredRows.length) {
+    el.innerHTML = `<div style="color:var(--red);font-size:13px;text-align:center;padding:20px">選択された秘書艦でのレコードが見つかりません</div>`;
+    return;
+  }
+
+  const secLabel = checkedSecs.length === 0
+    ? 'すべて'
+    : checkedSecs.length <= 3
+      ? checkedSecs.join(' / ')
+      : `${checkedSecs.slice(0,3).join(' / ')} 他${checkedSecs.length - 3}艦`;
+
+  const total = filteredRows.length;
+  const successRows = filteredRows.filter(r => r['開発装備'] !== '失敗');
+  const failCnt = filteredRows.filter(r => r['開発装備'] === '失敗').length;
+  const successRate = (successRows.length / total * 100).toFixed(1);
+
+  // 装備別カウント（成功のみ）
+  const itemCount = {};
+  successRows.forEach(r => {
+    const item = r['開発装備'];
+    if (!itemCount[item]) itemCount[item] = { cnt: 0, type: r['種別'] || '' };
+    itemCount[item].cnt++;
+  });
+
+  const sorted = Object.entries(itemCount).sort((a,b) => b[1].cnt - a[1].cnt);
+  const maxCnt = sorted.length ? sorted[0][1].cnt : 1;
+
+  // 種別ごとの色
+  const typeColorMap = {
+    '大口径主砲':'#e74c3c','中口径主砲':'#e67e22','小口径主砲':'#f39c12',
+    '副砲':'#d4a843','魚雷':'#3498db','艦上戦闘機':'#9b59b6',
+    '艦上爆撃機':'#8e44ad','艦上攻撃機':'#6c3483','水上爆撃機':'#1abc9c',
+    '対空機銃':'#27ae60','機関部強化':'#16a085','対艦強化弾':'#c0392b',
+    '電探':'#2980b9','簡易輸送部材':'#7f8c8d','特殊潜航艇':'#95a5a6',
+  };
+  const getColor = (type) => typeColorMap[type] || '#4db8e8';
+
+  // チャート用データ（TOP25）
+  const chartItems = sorted.slice(0, 25);
+  const chartLabels = chartItems.map(([k]) => k);
+  const chartData = chartItems.map(([,v]) => +(v.cnt / total * 100).toFixed(2));
+  const chartColors = chartItems.map(([,v]) => getColor(v.type));
+
+  el.innerHTML = `
+    <!-- サマリーカード -->
+    <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; margin-bottom:20px">
+      <div style="background:rgba(10,22,40,0.6);border:1px solid var(--border);border-radius:8px;padding:14px 16px">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:4px">対象レシピ</div>
+        <div style="font-size:12px;font-weight:700;color:var(--white)">燃<span style="color:var(--green)">${f}</span> 弾<span style="color:var(--gold)">${a}</span> 鋼<span style="color:var(--muted)">${s}</span> ボ<span style="color:var(--sky)">${b}</span></div>
+      </div>
+      <div style="background:rgba(10,22,40,0.6);border:1px solid ${checkedSecs.length > 0 ? 'rgba(77,184,232,0.4)' : 'var(--border)'};border-radius:8px;padding:14px 16px">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:4px">秘書艦</div>
+        <div style="font-size:12px;font-weight:700;color:${checkedSecs.length > 0 ? 'var(--sky)' : 'var(--muted)'}">${secLabel}</div>
+      </div>
+      <div style="background:rgba(10,22,40,0.6);border:1px solid var(--border);border-radius:8px;padding:14px 16px">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:4px">総開発数</div>
+        <div style="font-size:22px;font-weight:900;color:var(--sky)">${total.toLocaleString()}</div>
+      </div>
+      <div style="background:rgba(10,22,40,0.6);border:1px solid rgba(39,174,96,0.3);border-radius:8px;padding:14px 16px">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:4px">成功回数</div>
+        <div style="font-size:22px;font-weight:900;color:var(--green)">${successRows.length.toLocaleString()}</div>
+      </div>
+      <div style="background:rgba(10,22,40,0.6);border:1px solid rgba(192,57,43,0.3);border-radius:8px;padding:14px 16px">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:4px">失敗回数</div>
+        <div style="font-size:22px;font-weight:900;color:var(--red)">${failCnt.toLocaleString()}</div>
+      </div>
+      <div style="background:rgba(10,22,40,0.6);border:1px solid rgba(212,168,67,0.3);border-radius:8px;padding:14px 16px">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:4px">成功率</div>
+        <div style="font-size:22px;font-weight:900;color:var(--gold)">${successRate}%</div>
+      </div>
+      <div style="background:rgba(10,22,40,0.6);border:1px solid var(--border);border-radius:8px;padding:14px 16px">
+        <div style="font-size:11px;color:var(--muted);margin-bottom:4px">獲得装備種類</div>
+        <div style="font-size:22px;font-weight:900;color:var(--white)">${sorted.length}</div>
+      </div>
+    </div>
+
+    <!-- 棒グラフ (TOP25) -->
+    <div style="font-size:12px;color:var(--muted);margin-bottom:10px;letter-spacing:0.08em">▶ 装備別開発確率 TOP ${Math.min(25, sorted.length)}（総試行数ベース）</div>
+    <div style="position:relative; height:${Math.max(260, chartItems.length * 22)}px; margin-bottom:24px">
+      <canvas id="k-recipe-dist-chart"></canvas>
+    </div>
+
+    <!-- 全装備テーブル -->
+    <div style="font-size:12px;color:var(--muted);margin-bottom:10px;letter-spacing:0.08em">▶ 全装備一覧（${sorted.length}種）</div>
+    <div style="max-height:320px; overflow-y:auto" class="scroll-table">
+      <table class="rank-table">
+        <thead><tr><th>#</th><th>装備名</th><th>種別</th><th style="text-align:right">開発数</th><th style="text-align:right">確率（成功中）</th><th style="text-align:right">確率（全試行）</th><th style="width:120px">バー</th></tr></thead>
+        <tbody>
+          ${sorted.map(([item, v], i) => {
+            const pctOfSuccess = successRows.length ? (v.cnt/successRows.length*100).toFixed(2) : 0;
+            const pctOfTotal = (v.cnt/total*100).toFixed(2);
+            const color = getColor(v.type);
+            return `<tr>
+              <td class="rank-num">${i+1}</td>
+              <td style="font-weight:700">${item}</td>
+              <td style="color:${color};font-size:12px">${v.type}</td>
+              <td class="rank-count">${v.cnt}</td>
+              <td style="text-align:right;color:var(--gold)">${pctOfSuccess}%</td>
+              <td style="text-align:right;color:var(--sky)">${pctOfTotal}%</td>
+              <td><div class="rank-bar"><div class="rank-bar-fill" style="width:${(v.cnt/maxCnt*100).toFixed(1)}%;background:${color}"></div></div></td>
+            </tr>`;
+          }).join('')}
+          <tr style="border-top:1px solid var(--border)">
+            <td></td><td style="color:var(--red);font-weight:700">失敗</td><td></td>
+            <td class="rank-count" style="color:var(--red)">${failCnt}</td>
+            <td style="text-align:right;color:var(--red)">${(failCnt/total*100).toFixed(2)}%</td>
+            <td style="text-align:right;color:var(--red)">${(failCnt/total*100).toFixed(2)}%</td>
+            <td><div class="rank-bar"><div class="rank-bar-fill" style="width:${(failCnt/maxCnt*100).toFixed(1)}%;background:var(--red)"></div></div></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  // 棒グラフを描画（水平）
+  destroyChart('k-recipe-dist-chart');
+  const ctx = document.getElementById('k-recipe-dist-chart').getContext('2d');
+  charts['k-recipe-dist-chart'] = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: chartLabels,
+      datasets: [{
+        label: '開発確率 (%)',
+        data: chartData,
+        backgroundColor: chartColors.map(c => c + 'cc'),
+        borderColor: chartColors,
+        borderWidth: 1,
+        borderRadius: 3,
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => {
+              const item = sorted[ctx.dataIndex];
+              if (!item) return '';
+              const [name, v] = item;
+              return [
+                ` 確率（全試行）: ${ctx.raw}%`,
+                ` 開発数: ${v.cnt} 回`,
+                ` 種別: ${v.type || '—'}`
+              ];
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: { color: '#7a9abc', font:{size:11}, callback: v => v + '%' },
+          grid: { color: 'rgba(77,184,232,0.08)' }
+        },
+        y: {
+          ticks: { color: '#e8f0f8', font:{size:11} },
+          grid: { color: 'rgba(77,184,232,0.04)' }
+        }
+      }
+    }
+  });
+}
+
+// ============================
+// ドロップ報告書 レンダリング
+// ============================
+function renderDrop() {
+  let rows = store.drop.raw;
+  if (!rows.length) return;
+
+  const period = document.getElementById('d-period').value;
+  const map = document.getElementById('d-map').value;
+  const rank = document.getElementById('d-rank').value;
+  const ship = document.getElementById('d-ship').value.trim();
+
+  rows = filterByPeriod(rows, period);
+  if (map) rows = rows.filter(r => r['マップ'] === map);
+  if (rank) rows = rows.filter(r => r['ランク'] === rank);
+  if (ship) rows = rows.filter(r => r['ドロップ艦娘'].includes(ship));
+
+  const total = rows.length;
+  const dropRows = rows.filter(r => r['ドロップ艦娘']);
+  const drops = dropRows.length;
+  const dropRate = total ? (drops / total * 100).toFixed(1) : 0;
+  const sWin = rows.filter(r => r['ランク'] === 'S').length;
+  const sRate = total ? (sWin / total * 100).toFixed(1) : 0;
+  const uniqueShips = new Set(dropRows.map(r => r['ドロップ艦娘'])).size;
+
+  document.getElementById('d-total').textContent = total.toLocaleString();
+  document.getElementById('d-drops').textContent = drops.toLocaleString();
+  document.getElementById('d-drop-rate').textContent = `${dropRate}%`;
+  document.getElementById('d-s-rank').textContent = sWin.toLocaleString();
+  document.getElementById('d-s-rate').textContent = `${sRate}%`;
+  document.getElementById('d-unique').textContent = uniqueShips;
+
+  // マップ別チャート（TOP10）
+  const mapCount = countBy(rows.filter(r => r['マップ']), 'マップ');
+  const topMaps = Object.entries(mapCount).sort((a,b) => b[1]-a[1]).slice(0, 12);
+  renderBar('d-chart-map', topMaps.map(x=>x[0]), topMaps.map(x=>x[1]), '出撃数');
+
+  // ランク分布
+  const rankCount = countBy(rows.filter(r => r['ランク']), 'ランク');
+  const rankOrder = ['S','A','B','C','D','E'];
+  const rankKeys = rankOrder.filter(k => rankCount[k]);
+  renderDonut('d-chart-rank', rankKeys, rankKeys.map(k => rankCount[k]));
+
+  // ドロップ艦娘ランキング
+  const shipCount = countBy(dropRows, 'ドロップ艦娘');
+  renderRankTable('d-rank-ship', shipCount, 30, (key, cnt, total, pct, rank) => {
+    const typeRow = dropRows.find(r => r['ドロップ艦娘'] === key);
+    const type = typeRow ? typeRow['ドロップ艦種'] : '';
+    return `<td class="rank-num">${rank}</td><td>${key}</td><td style="color:var(--muted);font-size:12px">${type}</td>
+            <td class="rank-count">${cnt}</td><td class="rank-pct">${pct}%</td>
+            <td class="rank-bar-wrap"><div class="rank-bar"><div class="rank-bar-fill" style="width:${(cnt/total*100).toFixed(1)}%"></div></div></td>`;
+  }, drops);
+
+  // マップ別ランキング
+  const mapStat = {};
+  rows.forEach(r => {
+    const m = r['マップ'];
+    if (!m) return;
+    if (!mapStat[m]) mapStat[m] = { total: 0, drop: 0 };
+    mapStat[m].total++;
+    if (r['ドロップ艦娘']) mapStat[m].drop++;
+  });
+  const sortedMaps = Object.entries(mapStat).sort((a,b) => b[1].total - a[1].total);
+  const tbody2 = document.getElementById('d-rank-map');
+  tbody2.innerHTML = sortedMaps.map(([m, v], i) => {
+    const dr = v.total ? (v.drop / v.total * 100).toFixed(1) : 0;
+    return `<tr>
+      <td class="rank-num">${i+1}</td>
+      <td style="color:var(--sky)">${m}</td>
+      <td class="rank-count">${v.total}</td>
+      <td class="rank-count">${v.drop}</td>
+      <td style="text-align:right; color:var(--gold)">${dr}%</td>
+    </tr>`;
+  }).join('');
+}
+
+// ============================
+// 特定艦娘ドロップ検索
+// ============================
+function searchShipDrop() {
+  const name = document.getElementById('d-search-ship').value.trim();
+  const el = document.getElementById('d-search-result');
+  if (!name) { el.innerHTML = '<div style="color:var(--muted);font-size:13px">艦娘名を入力してください</div>'; return; }
+  const rows = store.drop.raw.filter(r => r['ドロップ艦娘'] === name);
+  if (!rows.length) {
+    el.innerHTML = `<div style="color:var(--red);font-size:13px">「${name}」のドロップ記録は見つかりませんでした</div>`;
+    return;
+  }
+  const mapCount = {};
+  rows.forEach(r => {
+    const m = r['マップ'];
+    if (!m) return;
+    mapCount[m] = (mapCount[m] || 0) + 1;
+  });
+  const sorted = Object.entries(mapCount).sort((a,b) => b[1]-a[1]);
+  const total = rows.length;
+  const allRows = store.drop.raw;
+  el.innerHTML = `
+    <div style="margin-bottom:12px; font-size:14px">「<strong style="color:var(--gold)">${name}</strong>」の総ドロップ数: <strong style="color:var(--sky)">${total}</strong> 回</div>
+    <table class="rank-table" style="max-width:500px">
+      <thead><tr><th>#</th><th>マップ</th><th style="text-align:right">ドロップ数</th><th style="text-align:right">マップ総出撃中の割合</th></tr></thead>
+      <tbody>${sorted.map(([m, cnt], i) => {
+        const mapTotal = allRows.filter(r => r['マップ'] === m).length;
+        const pct = mapTotal ? (cnt/mapTotal*100).toFixed(2) : 0;
+        return `<tr>
+          <td class="rank-num">${i+1}</td>
+          <td style="color:var(--sky)">${m}</td>
+          <td class="rank-count">${cnt}</td>
+          <td style="text-align:right; color:var(--gold)">${pct}%</td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table>`;
+}
+
+// ============================
+// ユーティリティ
+// ============================
+function countBy(rows, keyOrFn) {
+  const count = {};
+  rows.forEach(r => {
+    const k = typeof keyOrFn === 'function' ? keyOrFn(r) : r[keyOrFn];
+    if (k) count[k] = (count[k] || 0) + 1;
+  });
+  return count;
+}
+
+function renderRankTable(id, countObj, limit, rowFn, totalOverride) {
+  const sorted = Object.entries(countObj).sort((a,b) => b[1]-a[1]).slice(0, limit);
+  const total = totalOverride !== undefined ? totalOverride : sorted.reduce((s,[,v])=>s+v, 0);
+  document.getElementById(id).innerHTML = sorted.map(([key, cnt], i) => {
+    const pct = total ? (cnt/total*100).toFixed(1) : 0;
+    return `<tr>${rowFn(key, cnt, total, pct, i+1)}</tr>`;
+  }).join('');
+}
+
+// ============================
+// Chart.js ヘルパー
+// ============================
+const PALETTE = [
+  '#4db8e8','#d4a843','#27ae60','#e74c3c','#9b59b6',
+  '#3498db','#f39c12','#1abc9c','#e67e22','#2ecc71',
+  '#16a085','#8e44ad','#c0392b','#2980b9','#f1c40f',
+];
+
+function destroyChart(id) {
+  if (charts[id]) { charts[id].destroy(); delete charts[id]; }
+}
+
+function renderDonut(id, labels, data) {
+  destroyChart(id);
+  const ctx = document.getElementById(id).getContext('2d');
+  charts[id] = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels,
+      datasets: [{ data, backgroundColor: PALETTE, borderColor: '#0a1628', borderWidth: 2 }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'right', labels: { color: '#e8f0f8', font: { size: 11 }, padding: 8 } },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${ctx.raw.toLocaleString()} (${(ctx.raw/ctx.dataset.data.reduce((a,b)=>a+b,0)*100).toFixed(1)}%)` } }
+      }
+    }
+  });
+}
+
+function renderBar(id, labels, data, label) {
+  destroyChart(id);
+  const ctx = document.getElementById(id).getContext('2d');
+  charts[id] = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{ label, data, backgroundColor: 'rgba(77,184,232,0.7)', borderColor: '#4db8e8', borderWidth: 1 }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: '#7a9abc', font:{size:11} }, grid: { color: 'rgba(77,184,232,0.06)' } },
+        y: { ticks: { color: '#7a9abc', font:{size:11} }, grid: { color: 'rgba(77,184,232,0.08)' } }
+      }
+    }
+  });
+}
+
+function renderLine(id, labels, data, label) {
+  destroyChart(id);
+  const ctx = document.getElementById(id).getContext('2d');
+  charts[id] = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label, data,
+        borderColor: '#4db8e8', backgroundColor: 'rgba(77,184,232,0.1)',
+        fill: true, tension: 0.3, pointRadius: 3, pointBackgroundColor: '#4db8e8'
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: '#7a9abc', font:{size:10}, maxRotation: 45 }, grid: { color: 'rgba(77,184,232,0.06)' } },
+        y: { ticks: { color: '#7a9abc', font:{size:11} }, grid: { color: 'rgba(77,184,232,0.08)' } }
+      }
+    }
+  });
+}
+</script>
+</body>
+</html>
