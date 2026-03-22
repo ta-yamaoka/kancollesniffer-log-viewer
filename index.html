@@ -502,7 +502,7 @@
               <div style="font-size:11px; color:var(--sky); margin-bottom:6px; letter-spacing:0.08em; font-weight:700">ボーキ</div>
               <input type="number" id="k-r-bauxite" min="0" max="9999" placeholder="10" style="width:80px; background:rgba(10,22,40,0.8);border:1px solid rgba(77,184,232,0.4);color:var(--white);padding:8px 10px;border-radius:6px;font-family:inherit;font-size:13px;">
             </div>
-            <button onclick="searchRecipeDist()" style="background:var(--ocean);border:none;color:white;padding:8px 20px;border-radius:6px;cursor:pointer;font-family:inherit;font-size:14px;font-weight:700;white-space:nowrap;margin-bottom:1px">🔍 表示</button>
+            <button onclick="refreshSecretaryListForRecipeFromInputs();searchRecipeDist()" style="background:var(--ocean);border:none;color:white;padding:8px 20px;border-radius:6px;cursor:pointer;font-family:inherit;font-size:14px;font-weight:700;white-space:nowrap;margin-bottom:1px">🔍 表示</button>
           </div>
         </div>
 
@@ -949,17 +949,29 @@ function renderKaihatsu() {
 }
 
 // ============================
-// 秘書艦チェックボックス初期化
+// 秘書艦チェックボックス初期化（CSV読み込み時の初回）
 // ============================
 function initSecretaryCheckboxes(rows) {
+  updateSecretaryCheckboxes(rows);
+}
+
+// ============================
+// 秘書艦チェックボックスを指定rowsから動的再構築
+// ============================
+function updateSecretaryCheckboxes(rows) {
+  const prevChecked = getCheckedSecretaries();
   const secs = [...new Set(rows.map(r => normalizeSecretary(r['秘書艦'])).filter(Boolean))].sort();
   const container = document.getElementById('k-secretary-checkboxes');
-  container.innerHTML = secs.map(sec => `
-    <label class="sec-checkbox-label" id="sec-lbl-${CSS.escape(sec)}" onclick="onSecCheckboxClick(this)">
-      <input type="checkbox" value="${sec}" class="sec-cb">
-      ${sec}
-    </label>
-  `).join('');
+  if (!secs.length) {
+    container.innerHTML = '<div style="color:var(--muted);font-size:12px">該当する秘書艦がいません</div>';
+    updateSecFilterNote();
+    return;
+  }
+  container.innerHTML = secs.map(sec => {
+    const isChecked = prevChecked.includes(sec);
+    return `<label class="sec-checkbox-label${isChecked ? ' checked' : ''}" onclick="onSecCheckboxClick(this)"><input type="checkbox" value="${sec}" class="sec-cb"${isChecked ? ' checked' : ''}>${sec}</label>`;
+  }).join('');
+  updateSecFilterNote();
 }
 
 function onSecCheckboxClick(label) {
@@ -1024,6 +1036,7 @@ function onRecipeSelectChange() {
   document.getElementById('k-r-ammo').value = a;
   document.getElementById('k-r-steel').value = s;
   document.getElementById('k-r-bauxite').value = b;
+  refreshSecretaryListForRecipe(f, a, s, b);
   searchRecipeDist();
 }
 
@@ -1037,8 +1050,32 @@ function jumpToRecipeDist(key) {
   document.getElementById('k-r-ammo').value = a;
   document.getElementById('k-r-steel').value = s;
   document.getElementById('k-r-bauxite').value = b;
+  refreshSecretaryListForRecipe(f, a, s, b);
   searchRecipeDist();
   document.getElementById('k-recipe-dist-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// ============================
+// レシピ＋期間で絞ったrows から秘書艦リストを再構築
+// ============================
+function refreshSecretaryListForRecipe(f, a, s, b) {
+  const period = document.getElementById('k-period').value;
+  let rows = filterByPeriod(store.kaihatsu.raw, period);
+  if (f && a && s && b) {
+    rows = rows.filter(r =>
+      r['燃料'] === String(f) && r['弾薬'] === String(a) &&
+      r['鋼材'] === String(s) && r['ボーキ'] === String(b)
+    );
+  }
+  updateSecretaryCheckboxes(rows);
+}
+
+function refreshSecretaryListForRecipeFromInputs() {
+  const f = document.getElementById('k-r-fuel').value.trim();
+  const a = document.getElementById('k-r-ammo').value.trim();
+  const s = document.getElementById('k-r-steel').value.trim();
+  const b = document.getElementById('k-r-bauxite').value.trim();
+  refreshSecretaryListForRecipe(f, a, s, b);
 }
 
 // ============================
