@@ -557,7 +557,7 @@
       <!-- フィルター -->
       <div class="filter-bar">
         <span class="filter-label">期間</span>
-        <select id="d-period" onchange="renderDrop()">
+        <select id="d-period" onchange="onDropPeriodChange()">
           <option value="all">すべて</option>
           <option value="30">直近30日</option>
           <option value="90">直近90日</option>
@@ -566,8 +566,15 @@
         </select>
         <div class="filter-sep"></div>
         <span class="filter-label">マップ</span>
-        <select id="d-map" onchange="renderDrop()">
+        <select id="d-map" onchange="onDropMapChange()">
           <option value="">すべて</option>
+        </select>
+        <div class="filter-sep"></div>
+        <span class="filter-label">マス</span>
+        <select id="d-cell" onchange="renderDrop()">
+          <option value="">すべて</option>
+          <option value="boss">ボスのみ</option>
+          <option value="normal">道中のみ</option>
         </select>
         <div class="filter-sep"></div>
         <span class="filter-label">ランク</span>
@@ -637,10 +644,10 @@
           </div>
         </div>
         <div class="chart-card">
-          <div class="chart-title">マップ別ドロップランキング</div>
+          <div class="chart-title">マップ・マス別ドロップランキング</div>
           <div class="scroll-table">
             <table class="rank-table">
-              <thead><tr><th>#</th><th>マップ</th><th style="text-align:right">出撃</th><th style="text-align:right">ドロップ</th><th style="text-align:right">ドロップ率</th></tr></thead>
+              <thead><tr><th>#</th><th>マップ</th><th>マス</th><th>ボス</th><th style="text-align:right">出撃</th><th style="text-align:right">ドロップ</th><th style="text-align:right">ドロップ率</th></tr></thead>
               <tbody id="d-rank-map"></tbody>
             </table>
           </div>
@@ -797,12 +804,8 @@ function initFilters(key, rows) {
     fillSelect('k-type', types);
     initSecretaryCheckboxes(rows);
   } else {
-    const maps = [...new Set(rows.map(r => r['マップ']).filter(Boolean))].sort((a,b) => {
-      const [a1,a2] = a.split('-').map(Number);
-      const [b1,b2] = b.split('-').map(Number);
-      return a1 !== b1 ? a1-b1 : a2-b2;
-    });
-    fillSelect('d-map', maps);
+    // マップセレクトは updateDropMapSelect() で管理するので初回だけ呼ぶ
+    updateDropMapSelect();
   }
 }
 
@@ -847,8 +850,10 @@ function resetFilters(key) {
   } else {
     document.getElementById('d-period').value = 'all';
     document.getElementById('d-map').value = '';
+    document.getElementById('d-cell').value = '';
     document.getElementById('d-rank').value = '';
     document.getElementById('d-ship').value = '';
+    updateDropMapSelect();
     renderDrop();
   }
 }
@@ -1276,17 +1281,70 @@ function searchRecipeDist() {
 // ============================
 // ドロップ報告書 レンダリング
 // ============================
+// 期間変更時：マップセレクトも更新してから再描画
+function onDropPeriodChange() {
+  updateDropMapSelect();
+  renderDrop();
+}
+
+// マップ変更時：マスセレクトを更新してから再描画
+function onDropMapChange() {
+  updateDropCellSelect();
+  renderDrop();
+}
+
+// 期間に応じてマップセレクトを更新
+function updateDropMapSelect() {
+  const period = document.getElementById('d-period').value;
+  const prevMap = document.getElementById('d-map').value;
+  let rows = filterByPeriod(store.drop.raw, period);
+  const maps = [...new Set(rows.map(r => r['マップ']).filter(Boolean))].sort((a, b) => {
+    const [a1, a2] = a.split('-').map(Number);
+    const [b1, b2] = b.split('-').map(Number);
+    return a1 !== b1 ? a1 - b1 : a2 - b2;
+  });
+  const sel = document.getElementById('d-map');
+  while (sel.options.length > 1) sel.remove(1);
+  maps.forEach(m => {
+    const opt = document.createElement('option');
+    opt.value = m; opt.textContent = m;
+    sel.appendChild(opt);
+  });
+  sel.value = maps.includes(prevMap) ? prevMap : '';
+  updateDropCellSelect();
+}
+
+// マップ選択に応じてマスセレクトを更新（ボス/道中の実在確認）
+function updateDropCellSelect() {
+  const period = document.getElementById('d-period').value;
+  const map = document.getElementById('d-map').value;
+  let rows = filterByPeriod(store.drop.raw, period);
+  if (map) rows = rows.filter(r => r['マップ'] === map);
+  const hasBoss   = rows.some(r => r['ボス'] === 'ボス');
+  const hasNormal = rows.some(r => r['ボス'] !== 'ボス');
+  const sel = document.getElementById('d-cell');
+  const prev = sel.value;
+  // bossオプション
+  sel.options[1].disabled = !hasBoss;
+  sel.options[2].disabled = !hasNormal;
+  if (prev === 'boss'   && !hasBoss)   sel.value = '';
+  if (prev === 'normal' && !hasNormal) sel.value = '';
+}
+
 function renderDrop() {
   let rows = store.drop.raw;
   if (!rows.length) return;
 
   const period = document.getElementById('d-period').value;
-  const map = document.getElementById('d-map').value;
-  const rank = document.getElementById('d-rank').value;
-  const ship = document.getElementById('d-ship').value.trim();
+  const map    = document.getElementById('d-map').value;
+  const cell   = document.getElementById('d-cell').value;
+  const rank   = document.getElementById('d-rank').value;
+  const ship   = document.getElementById('d-ship').value.trim();
 
   rows = filterByPeriod(rows, period);
-  if (map) rows = rows.filter(r => r['マップ'] === map);
+  if (map)  rows = rows.filter(r => r['マップ'] === map);
+  if (cell === 'boss')   rows = rows.filter(r => r['ボス'] === 'ボス');
+  if (cell === 'normal') rows = rows.filter(r => r['ボス'] !== 'ボス');
   if (rank) rows = rows.filter(r => r['ランク'] === rank);
   if (ship) rows = rows.filter(r => r['ドロップ艦娘'].includes(ship));
 
@@ -1305,15 +1363,15 @@ function renderDrop() {
   document.getElementById('d-s-rate').textContent = `${sRate}%`;
   document.getElementById('d-unique').textContent = uniqueShips;
 
-  // マップ別チャート（TOP10）
+  // マップ別チャート（TOP12）
   const mapCount = countBy(rows.filter(r => r['マップ']), 'マップ');
-  const topMaps = Object.entries(mapCount).sort((a,b) => b[1]-a[1]).slice(0, 12);
-  renderBar('d-chart-map', topMaps.map(x=>x[0]), topMaps.map(x=>x[1]), '出撃数');
+  const topMaps = Object.entries(mapCount).sort((a, b) => b[1] - a[1]).slice(0, 12);
+  renderBar('d-chart-map', topMaps.map(x => x[0]), topMaps.map(x => x[1]), '出撃数');
 
   // ランク分布
   const rankCount = countBy(rows.filter(r => r['ランク']), 'ランク');
-  const rankOrder = ['S','A','B','C','D','E'];
-  const rankKeys = rankOrder.filter(k => rankCount[k]);
+  const rankOrder = ['S', 'A', 'B', 'C', 'D', 'E'];
+  const rankKeys  = rankOrder.filter(k => rankCount[k]);
   renderDonut('d-chart-rank', rankKeys, rankKeys.map(k => rankCount[k]));
 
   // ドロップ艦娘ランキング
@@ -1326,22 +1384,32 @@ function renderDrop() {
             <td class="rank-bar-wrap"><div class="rank-bar"><div class="rank-bar-fill" style="width:${(cnt/total*100).toFixed(1)}%"></div></div></td>`;
   }, drops);
 
-  // マップ別ランキング
-  const mapStat = {};
+  // マップ・マス別ランキング
+  const cellStat = {};
   rows.forEach(r => {
     const m = r['マップ'];
+    const c = r['経路'];
+    const b = r['ボス'];
     if (!m) return;
-    if (!mapStat[m]) mapStat[m] = { total: 0, drop: 0 };
-    mapStat[m].total++;
-    if (r['ドロップ艦娘']) mapStat[m].drop++;
+    const key = `${m}__${c}__${b}`;
+    if (!cellStat[key]) cellStat[key] = { map: m, cell: c, boss: b, total: 0, drop: 0 };
+    cellStat[key].total++;
+    if (r['ドロップ艦娘']) cellStat[key].drop++;
   });
-  const sortedMaps = Object.entries(mapStat).sort((a,b) => b[1].total - a[1].total);
+  const sortedCells = Object.values(cellStat).sort((a, b) => b.total - a.total);
   const tbody2 = document.getElementById('d-rank-map');
-  tbody2.innerHTML = sortedMaps.map(([m, v], i) => {
+  tbody2.innerHTML = sortedCells.map((v, i) => {
     const dr = v.total ? (v.drop / v.total * 100).toFixed(1) : 0;
+    const bossLabel = v.boss === 'ボス'
+      ? `<span style="color:var(--gold);font-weight:700">ボス</span>`
+      : v.boss === '基地空襲'
+        ? `<span style="color:var(--red);font-size:11px">基地空襲</span>`
+        : `<span style="color:var(--muted);font-size:11px">道中</span>`;
     return `<tr>
       <td class="rank-num">${i+1}</td>
-      <td style="color:var(--sky)">${m}</td>
+      <td style="color:var(--sky)">${v.map}</td>
+      <td style="font-family:'Share Tech Mono',monospace;color:var(--white)">${v.cell}</td>
+      <td>${bossLabel}</td>
       <td class="rank-count">${v.total}</td>
       <td class="rank-count">${v.drop}</td>
       <td style="text-align:right; color:var(--gold)">${dr}%</td>
