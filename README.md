@@ -1,2 +1,3 @@
-# kancollsniffer-log-viewer
-kancollsnifferのlogを閲覧する
+# kancollesniffer-log-viewer
+kancollesnifferのlogを閲覧する
+
